@@ -24,7 +24,54 @@ type StaticFile struct {
 	Etag              string
 }
 
-var staticFiles *Array[*StaticFile] = &Array[*StaticFile]{}
+type Cache struct {
+	maxSize     uint64
+	maxFileSize uint64
+
+	files       *Array[*StaticFile]
+	currentSize uint64
+}
+
+func (c *Cache) CalcSize() uint64 {
+	size := uint64(0)
+	iter := c.files.Iterator()
+	for !iter.Done() {
+		file, _ := iter.Next()
+		size += uint64(len(file.Content))
+	}
+	c.currentSize = size
+	return size
+}
+
+func (c *Cache) CalcSizeMb() uint64 {
+	bytesLen := c.CalcSize()
+	return bytesLen / 1024 / 1024
+}
+
+func (c *Cache) Push(file *StaticFile) bool {
+	fsize := uint64(len(file.Content))
+	if fsize > c.maxFileSize {
+		return false
+	}
+	if c.currentSize+fsize > c.maxSize {
+		return false
+	}
+	c.currentSize += fsize
+	c.files.Push(file)
+	return true
+}
+
+func (c *Cache) Iterator() Iterator[*StaticFile] {
+	return c.files.Iterator()
+}
+
+func (c *Cache) IsWithinFileLimit(file *StaticFile) bool {
+	return uint64(len(file.Content)) <= c.maxFileSize
+}
+
+var cache *Cache = &Cache{
+	files: &Array[*StaticFile]{},
+}
 
 func detectContentType(filepath string, content []byte) string {
 	httpDet := http.DetectContentType(content)
@@ -52,30 +99,31 @@ func detectContentType(filepath string, content []byte) string {
 	return httpDet
 }
 
-func (f *StaticFile) Revalidate() error {
+// Return true if the file has changed
+func (f *StaticFile) Revalidate() (bool, error) {
 	// check if the file has changed since last time
 	// and reload it if it has
 	file, err := os.Open(f.Path)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer file.Close()
 
 	info, err := file.Stat()
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	modTime := info.ModTime()
 	if modTime.Equal(*f.LastModifiedAt) {
-		return nil
+		return false, nil
 	}
 
 	buff := make([]byte, info.Size())
 	_, err = file.Read(buff)
 
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	f.Content = buff
@@ -84,7 +132,7 @@ func (f *StaticFile) Revalidate() error {
 	f.LastModifiedAtRFC = modTime.Format(http.TimeFormat)
 	f.ContentType = detectContentType(f.Path, buff)
 
-	return nil
+	return true, nil
 }
 
 func getStaticFile(filepath string) ([]byte, string, *time.Time, error) {
@@ -191,28 +239,44 @@ func (s *StaticResponse) buildCacheControlHeader(conf *Configuration) string {
 }
 
 type Configuration struct {
-	BeforeSend  func(*StaticResponse, echo.Context) error
-	RedirectTo  string
-	ExcludeEtag bool
-	MaxAge      int
-	NoCache     bool
+	BeforeSend       func(*StaticResponse, echo.Context) error
+	RedirectTo       string
+	ExcludeEtag      bool
+	MaxAge           int
+	NoCache          bool
+	MacCacheSize     uint64
+	MaxCacheFileSize uint64
+}
+
+func fmtSize(size int) string {
+	if size < 1024 {
+		return strconv.Itoa(size) + "B"
+	}
+	if size < 1024*1024 {
+		return strconv.Itoa(size/1024) + "KB"
+	}
+	return strconv.Itoa(size/1024/1024) + "MB"
 }
 
 func AddFileRoutes(server *echo.Echo, baseUrl string, rootDir string, conf *Configuration) {
+	cache.maxSize = conf.MacCacheSize * 1024 * 1024         // MB * KB * B = B
+	cache.maxFileSize = conf.MaxCacheFileSize * 1024 * 1024 // MB * KB * B = B
+
 	if rootDir[len(rootDir)-1] != '/' {
 		rootDir += "/"
 	}
 
-	utils.Walk(rootDir, func(root string, dirs []string, files []string) error {
-		for _, file := range files {
-			filepath := path.Join(root, file)
-			relativePath := filepath[len(rootDir):]
-			content, ctype, modTime, err := getStaticFile(filepath)
+	if cache.maxSize > 0 {
+		utils.Walk(rootDir, func(root string, dirs []string, files []string) error {
+			for _, file := range files {
+				filepath := path.Join(root, file)
+				relativePath := filepath[len(rootDir):]
+				content, ctype, modTime, err := getStaticFile(filepath)
 
-			if err == nil {
-				server.Logger.Debug(fmt.Sprintf("Adding file: %s", relativePath))
-				staticFiles.Push(
-					&StaticFile{
+				if err == nil {
+					server.Logger.Debugf("Adding file to cache: %s", relativePath)
+
+					file := &StaticFile{
 						Path:              filepath,
 						RelPath:           relativePath,
 						Content:           content,
@@ -220,23 +284,52 @@ func AddFileRoutes(server *echo.Echo, baseUrl string, rootDir string, conf *Conf
 						Etag:              utils.HashBytes(content),
 						LastModifiedAt:    modTime,
 						LastModifiedAtRFC: modTime.Format(http.TimeFormat),
-					},
-				)
+					}
+					added := cache.Push(file)
+
+					if !added {
+						if cache.IsWithinFileLimit(file) {
+							server.Logger.Debugf(
+								"Cache mem limit reached when adding file: %s (%s)",
+								relativePath,
+								fmtSize(len(file.Content)),
+							)
+							// stop walking the directory
+							return fmt.Errorf("unable to add file to cache")
+						}
+					}
+				}
 			}
-		}
-		return nil
-	})
+			return nil
+		})
+
+		server.Logger.Debugf(
+			"Current cache size: %dMB",
+			cache.CalcSizeMb(),
+		)
+	}
 
 	server.GET(baseUrl+"/*", func(c echo.Context) error {
 		routePath := c.Param("*")
 
-		server.Logger.Debug(fmt.Sprintf("Received request for file: %s", routePath))
+		server.Logger.Debugf("Received request for file: %s", routePath)
 
-		sfIterator := staticFiles.Iterator()
-		for !sfIterator.Done() {
-			file, _ := sfIterator.Next()
+		iter := cache.Iterator()
+		for !iter.Done() {
+			file, _ := iter.Next()
 			if file.RelPath == routePath {
-				file.Revalidate()
+				changed, err := file.Revalidate()
+				if err != nil {
+					server.Logger.Errorf(
+						"Failed to revalidate file(%s): %s",
+						file.Path, err.Error(),
+					)
+					return c.String(500, "Internal server error")
+				}
+				if changed {
+					// update cache size
+					cache.CalcSize()
+				}
 				return sendFile(file, c, conf)
 			}
 		}
@@ -256,15 +349,22 @@ func AddFileRoutes(server *echo.Echo, baseUrl string, rootDir string, conf *Conf
 				LastModifiedAt:    modTime,
 				LastModifiedAtRFC: modTime.Format(http.TimeFormat),
 			}
-			staticFiles.Push(file)
+			cache.Push(file)
 
 			return sendFile(file, c, conf)
+		} else {
+			server.Logger.Errorf("Failed to read the file(%s): %s", filepath, err.Error())
 		}
 
 		if conf.RedirectTo != "" {
+			server.Logger.Debugf(
+				"Requested file not found, redirecting to: %s",
+				conf.RedirectTo,
+			)
 			return c.Redirect(302, conf.RedirectTo)
 		}
 
+		server.Logger.Debug("Requested file not found")
 		return c.String(404, "Not found")
 	})
 }
@@ -290,6 +390,7 @@ func sendFile(file *StaticFile, c echo.Context, conf *Configuration) error {
 	}
 
 	if c.Request().Header.Get("If-None-Match") == file.Etag || c.Request().Header.Get("If-Modified-Since") == file.LastModifiedAtRFC {
+		c.Logger().Debug("Resource not modified, returning 304")
 		return c.NoContent(304)
 	}
 

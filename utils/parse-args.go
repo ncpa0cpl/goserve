@@ -28,6 +28,15 @@ func (args *ParsedArgs) GetParamInt(paramName string, defaultValue int) int {
 	return defaultValue
 }
 
+func (args *ParsedArgs) GetParamUint64(paramName string, defaultValue uint64) uint64 {
+	if v, ok := args.NamedParams.Get(paramName); ok {
+		if i, err := strconv.ParseUint(v, 10, 64); err == nil {
+			return i
+		}
+	}
+	return defaultValue
+}
+
 func removePrefix(argName string) string {
 	if strings.HasPrefix(argName, "--") {
 		return argName[2:]

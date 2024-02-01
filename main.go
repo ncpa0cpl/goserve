@@ -18,13 +18,15 @@ func main() {
 		fmt.Println("Usage: serve [options] [directory]")
 		fmt.Println("")
 		fmt.Println("Options:")
-		fmt.Println("  --help             Print this help message.")
-		fmt.Println("  --loglevel <level> The log level. Default: info")
-		fmt.Println("  --maxage <seconds> The max-age value to set in the Cache-Control header.")
-		fmt.Println("  --nocache          Disable caching.")
-		fmt.Println("  --noetag           Disable ETag generation.")
-		fmt.Println("  --port <port>      The port to serve on. Default: 8080")
-		fmt.Println("  --redirect <url>   Redirect all unmatched routes to a specified url.")
+		fmt.Println("  --help              Print this help message.")
+		fmt.Println("  --loglevel <level>  The log level. Default: info")
+		fmt.Println("  --maxage <seconds>  The max-age value to set in the Cache-Control header.")
+		fmt.Println("  --nocache           Disable caching.")
+		fmt.Println("  --noetag            Disable ETag generation.")
+		fmt.Println("  --port <port>       The port to serve on. Default: 8080")
+		fmt.Println("  --redirect <url>    Redirect all unmatched routes to a specified url.")
+		fmt.Println("  --cache:max <MB>    Maximum size of all files in the cache. Default: 100MB")
+		fmt.Println("  --cache:flimit <MB> Maximum size of single file that can be put in cache. Default: 10MB")
 		return
 	}
 
@@ -67,10 +69,12 @@ func main() {
 	server.Logger.Info(fmt.Sprintf("Serving files from: %s", rootDir))
 
 	AddFileRoutes(server, "", rootDir, &Configuration{
-		RedirectTo:  args.GetParam("redirect", ""),
-		ExcludeEtag: args.NamedParams.Has("noetag"),
-		MaxAge:      args.GetParamInt("maxage", 0),
-		NoCache:     args.NamedParams.Has("nocache"),
+		RedirectTo:       args.GetParam("redirect", ""),
+		ExcludeEtag:      args.NamedParams.Has("noetag"),
+		MaxAge:           args.GetParamInt("maxage", 0),
+		NoCache:          args.NamedParams.Has("nocache"),
+		MacCacheSize:     args.GetParamUint64("cache:max", 100),
+		MaxCacheFileSize: args.GetParamUint64("cache:flimit", 10),
 	})
 
 	err := server.Start(fmt.Sprintf(":%s", args.GetParam("port", "8080")))
