@@ -87,8 +87,10 @@ func detectContentType(filepath string, content []byte) string {
 			return strings.Replace(httpDet, "text/plain", "text/html", 1)
 		case ".css":
 			return strings.Replace(httpDet, "text/plain", "text/css", 1)
-		case ".js":
+		case ".js", ".mjs", ".cjs":
 			return strings.Replace(httpDet, "text/plain", "text/javascript", 1)
+		case ".ts", ".mts", ".cts":
+			return strings.Replace(httpDet, "text/plain", "text/typescript", 1)
 		case ".json":
 			return strings.Replace(httpDet, "text/plain", "application/json", 1)
 		case ".xml":
