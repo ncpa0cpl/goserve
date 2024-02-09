@@ -1,0 +1,25 @@
+{
+  "name": "goserve",
+  "version": "1.0.0",
+  "description": "A simple static file server written in Go.",
+  "keywords": [
+    "static",
+    "http",
+    "server",
+    "cli",
+    "tool",
+    "html",
+    "develop",
+    "watch",
+    "auto reload"
+  ],
+  "files": [
+    "./serve"
+  ],
+  "bin": "./serve",
+  "author": "Szymon Bretner",
+  "license": "MIT",
+  "scripts": {
+    "prepack": "go build -o ./serve"
+  }
+}

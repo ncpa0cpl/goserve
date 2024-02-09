@@ -15,7 +15,7 @@ func main() {
 	args := utils.ParseArgs(os.Args[1:])
 
 	if args.NamedParams.Has("help") {
-		fmt.Println("Usage: serve [options] [directory]")
+		fmt.Println("Usage: goserve [options] [directory]")
 		fmt.Println("")
 		fmt.Println("Options:")
 		fmt.Println("  --help              Print this help message.")

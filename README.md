@@ -1,17 +1,39 @@
+# goserve
 ## A very simple http static file server
 
-### Build
+### Build & Install
+
+#### Install via npm
 
 ```bash
-go build -o ./serve
-# Copy the binary to a bin directory (assuming ~/.local/bin is in your PATH)
-cp ./serve ~/.local/bin
+npm i -D goserve
+```
+
+#### Build yourself
+
+Clone the repo
+
+```bash
+git clone https://github.com/ncpa0cpl/goserve
+```
+
+Build the binary
+
+```bash
+go build -o ./goserve
+```
+
+Install the program in your PATH
+Copy the binary to a bin directory (assuming `~/.local/bin` is in your PATH)
+
+```bash
+cp ./goserve ~/.local/bin
 ```
 
 ### Usage
 
 ```
-Usage: serve [options] [directory]
+Usage: goserve [options] [directory]
 
 Options:
   --help              Print this help message.
@@ -35,7 +57,7 @@ Caching
 To serve files from the `public` directory of the current directory on port 8000:
 
 ```bash
-serve --port 8000 ./public
+goserve --port 8000 ./public
 ```
 
 ### Auto-reload
