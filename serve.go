@@ -1,17 +1,22 @@
 package main
 
 import (
+	"bytes"
+	_ "embed"
 	"fmt"
 	"net/http"
 	"os"
 	"path"
+	fp "path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 	. "github.com/ncpa0cpl/convenient-structures"
 	"github.com/ncpa0cpl/static-server/utils"
+	"github.com/radovskyb/watcher"
 )
 
 type StaticFile struct {
@@ -22,6 +27,7 @@ type StaticFile struct {
 	LastModifiedAt    *time.Time
 	LastModifiedAtRFC string
 	Etag              string
+	Config            *Configuration
 }
 
 type Cache struct {
@@ -128,7 +134,11 @@ func (f *StaticFile) Revalidate() (bool, error) {
 		return false, err
 	}
 
-	f.Content = buff
+	if f.Config.Watcher && strings.Contains(f.ContentType, "text/html") {
+		f.Content = addMetaTags(buff, f.RelPath, modTime)
+	} else {
+		f.Content = buff
+	}
 	f.Etag = utils.HashBytes(buff)
 	f.LastModifiedAt = &modTime
 	f.LastModifiedAtRFC = modTime.Format(http.TimeFormat)
@@ -137,7 +147,29 @@ func (f *StaticFile) Revalidate() (bool, error) {
 	return true, nil
 }
 
-func getStaticFile(filepath string) ([]byte, string, *time.Time, error) {
+func addMetaTags(html []byte, relPath string, modTime time.Time) []byte {
+	fname := fmt.Sprintf("    <meta name=\"_serve:fname\" content=\"%s\" />\n", relPath)
+	mtime := fmt.Sprintf("    <meta name=\"_serve:mtime\" content=\"%d\" />\n", modTime.UnixMilli())
+	fsize := fmt.Sprintf("    <meta name=\"_serve:fsize\" content=\"%d\" />\n", len(html))
+
+	tags := []byte(fname + mtime + fsize)
+
+	headEnd := []byte("</head>")
+	headEndIdx := bytes.Index(html, headEnd)
+
+	if headEndIdx == -1 {
+		return html
+	}
+
+	before := html[:headEndIdx]
+	after := html[headEndIdx:]
+
+	result := append(before, append(tags, after...)...)
+
+	return result
+}
+
+func getStaticFile(filepath, rootDir string) ([]byte, string, *time.Time, error) {
 	file, err := os.Open(filepath)
 	if err != nil {
 		return nil, "", nil, err
@@ -157,7 +189,14 @@ func getStaticFile(filepath string) ([]byte, string, *time.Time, error) {
 	}
 
 	modTime := info.ModTime()
-	return buff, detectContentType(filepath, buff), &modTime, err
+	contentType := detectContentType(filepath, buff)
+
+	if strings.Contains(contentType, "text/html") {
+		relPath, _ := fp.Rel(rootDir, filepath)
+		buff = addMetaTags(buff, relPath, modTime)
+	}
+
+	return buff, contentType, &modTime, err
 }
 
 type StaticResponse struct {
@@ -248,6 +287,8 @@ type Configuration struct {
 	NoCache          bool
 	MacCacheSize     uint64
 	MaxCacheFileSize uint64
+	Watcher          bool
+	AutoReload       bool
 }
 
 func fmtSize(size int) string {
@@ -259,6 +300,9 @@ func fmtSize(size int) string {
 	}
 	return strconv.Itoa(size/1024/1024) + "MB"
 }
+
+var WebSockets = utils.CreateWsController()
+var upgrader = websocket.Upgrader{}
 
 func AddFileRoutes(server *echo.Echo, baseUrl string, rootDir string, conf *Configuration) {
 	cache.maxSize = conf.MacCacheSize * 1024 * 1024         // MB * KB * B = B
@@ -273,7 +317,7 @@ func AddFileRoutes(server *echo.Echo, baseUrl string, rootDir string, conf *Conf
 			for _, file := range files {
 				filepath := path.Join(root, file)
 				relativePath := filepath[len(rootDir):]
-				content, ctype, modTime, err := getStaticFile(filepath)
+				content, ctype, modTime, err := getStaticFile(filepath, rootDir)
 
 				if err == nil {
 					server.Logger.Debugf("Adding file to cache: %s", relativePath)
@@ -286,6 +330,7 @@ func AddFileRoutes(server *echo.Echo, baseUrl string, rootDir string, conf *Conf
 						Etag:              utils.HashBytes(content),
 						LastModifiedAt:    modTime,
 						LastModifiedAtRFC: modTime.Format(http.TimeFormat),
+						Config:            conf,
 					}
 					added := cache.Push(file)
 
@@ -309,6 +354,60 @@ func AddFileRoutes(server *echo.Echo, baseUrl string, rootDir string, conf *Conf
 			"Current cache size: %dMB",
 			cache.CalcSizeMb(),
 		)
+	}
+
+	if conf.Watcher {
+		server.GET("/__serve_hmr", func(c echo.Context) error {
+			ws, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
+			if err != nil {
+				return err
+			}
+			WebSockets.AddConnection(ws)
+			return nil
+		})
+
+		go func() {
+			w := watcher.New()
+
+			go func() {
+				for {
+					select {
+					case event := <-w.Event:
+						if event.IsDir() {
+							continue
+						}
+						switch event.Op {
+						case watcher.Write:
+							relPath, _ := fp.Rel(rootDir, event.OldPath)
+							WebSockets.SendToAll(fmt.Sprintf("changed:%s", relPath))
+						case watcher.Create:
+							relPath, _ := fp.Rel(rootDir, event.Path)
+							WebSockets.SendToAll(fmt.Sprintf("created:%s", relPath))
+						case watcher.Remove:
+							relPath, _ := fp.Rel(rootDir, event.OldPath)
+							WebSockets.SendToAll(fmt.Sprintf("deleted:%s", relPath))
+						case watcher.Rename, watcher.Move:
+							relPath, _ := fp.Rel(rootDir, event.OldPath)
+							newRel, _ := fp.Rel(rootDir, event.Path)
+							WebSockets.SendToAll(fmt.Sprintf("renamed:%s:%s", relPath, newRel))
+						}
+					case err := <-w.Error:
+						server.Logger.Errorf("Watcher error: %s", err.Error())
+					case <-w.Closed:
+						return
+					}
+				}
+			}()
+
+			err := w.AddRecursive(rootDir)
+			if err != nil {
+				server.Logger.Errorf("Failed to add directory to watcher: %s", err.Error())
+			}
+			err = w.Start(time.Millisecond * 250)
+			if err != nil {
+				server.Logger.Errorf("Failed to start watcher: %s", err.Error())
+			}
+		}()
 	}
 
 	server.GET(baseUrl+"/*", func(c echo.Context) error {
@@ -339,7 +438,7 @@ func AddFileRoutes(server *echo.Echo, baseUrl string, rootDir string, conf *Conf
 		// check if files exists in fs, and if it does load it into memory
 		// and serve it
 		filepath := path.Join(rootDir, routePath)
-		content, ctype, modTime, err := getStaticFile(filepath)
+		content, ctype, modTime, err := getStaticFile(filepath, rootDir)
 
 		if err == nil {
 			file := &StaticFile{
@@ -350,6 +449,7 @@ func AddFileRoutes(server *echo.Echo, baseUrl string, rootDir string, conf *Conf
 				Etag:              utils.HashBytes(content),
 				LastModifiedAt:    modTime,
 				LastModifiedAtRFC: modTime.Format(http.TimeFormat),
+				Config:            conf,
 			}
 			cache.Push(file)
 
@@ -422,5 +522,39 @@ func sendFile(file *StaticFile, c echo.Context, conf *Configuration) error {
 		}
 	}
 
-	return c.Blob(200, file.ContentType, file.Content)
+	content := file.Content
+
+	if conf.Watcher && strings.Contains(file.ContentType, "text/html") {
+		content = addHmrScript(content, conf.AutoReload)
+	}
+
+	return c.Blob(200, file.ContentType, content)
+}
+
+//go:embed hmr-script.js
+var HMR_SCRIPT string
+
+//go:embed autoreload-script.js
+var AUTORELOAD_SCRIPT string
+
+func addHmrScript(html []byte, autoreload bool) []byte {
+	tag := []byte(fmt.Sprintf("    <script>%s\n    </script>\n", HMR_SCRIPT))
+
+	if autoreload {
+		tag = append(tag, fmt.Sprintf("    <script>%s\n    </script>\n", AUTORELOAD_SCRIPT)...)
+	}
+
+	headEnd := []byte("</head>")
+	headEndIdx := bytes.Index(html, headEnd)
+
+	if headEndIdx == -1 {
+		return html
+	}
+
+	before := html[:headEndIdx]
+	after := html[headEndIdx:]
+
+	result := append(before, append(tag, after...)...)
+
+	return result
 }

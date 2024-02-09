@@ -3,11 +3,16 @@ module github.com/ncpa0cpl/static-server
 go 1.21.6
 
 require (
-	github.com/labstack/echo/v4 v4.11.4 // indirect
-	github.com/labstack/gommon v0.4.2 // indirect
+	github.com/gorilla/websocket v1.5.1
+	github.com/labstack/echo/v4 v4.11.4
+	github.com/labstack/gommon v0.4.2
+	github.com/ncpa0cpl/convenient-structures v0.0.0-20231127113943-08d3c9127a1a
+	github.com/radovskyb/watcher v1.0.7
+)
+
+require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/ncpa0cpl/convenient-structures v0.0.0-20231127113943-08d3c9127a1a // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	golang.org/x/crypto v0.17.0 // indirect

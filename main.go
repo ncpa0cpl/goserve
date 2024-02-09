@@ -20,13 +20,20 @@ func main() {
 		fmt.Println("Options:")
 		fmt.Println("  --help              Print this help message.")
 		fmt.Println("  --loglevel <level>  The log level. Default: info")
-		fmt.Println("  --maxage <seconds>  The max-age value to set in the Cache-Control header.")
-		fmt.Println("  --nocache           Disable caching.")
-		fmt.Println("  --noetag            Disable ETag generation.")
 		fmt.Println("  --port <port>       The port to serve on. Default: 8080")
 		fmt.Println("  --redirect <url>    Redirect all unmatched routes to a specified url.")
-		fmt.Println("  --cache:max <MB>    Maximum size of all files in the cache. Default: 100MB")
-		fmt.Println("  --cache:flimit <MB> Maximum size of single file that can be put in cache. Default: 10MB")
+		fmt.Println("")
+		fmt.Println("Hot Module Reload")
+		fmt.Println("  --aw           Alias for '--watch --auto-reload'")
+		fmt.Println("  --watch        When enabled, server will send fs events when files are changed. To listen to these add event listeners to `window.HMR` on client side.")
+		fmt.Println("  --auto-reload  Automatically inject a script to html files that will reload the page on a 'watch' change event.")
+		fmt.Println("")
+		fmt.Println("Caching")
+		fmt.Println("  --maxage <seconds>   The max-age value to set in the Cache-Control header.")
+		fmt.Println("  --nocache            Disable caching.")
+		fmt.Println("  --noetag             Disable ETag generation.")
+		fmt.Println("  --cache:max <MB>     Maximum size of all files in the cache. Default: 100MB")
+		fmt.Println("  --cache:flimit <MB>  Maximum size of single file that can be put in cache. Default: 10MB")
 		return
 	}
 
@@ -75,6 +82,8 @@ func main() {
 		NoCache:          args.NamedParams.Has("nocache"),
 		MacCacheSize:     args.GetParamUint64("cache:max", 100),
 		MaxCacheFileSize: args.GetParamUint64("cache:flimit", 10),
+		Watcher:          args.NamedParams.Has("watch") || args.NamedParams.Has("aw"),
+		AutoReload:       args.NamedParams.Has("auto-reload") || args.NamedParams.Has("aw"),
 	})
 
 	err := server.Start(fmt.Sprintf(":%s", args.GetParam("port", "8080")))
