@@ -3,7 +3,9 @@
 
 ### Build & Install
 
-#### Install via npm
+#### ~Install via npm~
+
+**Not available atm.**
 
 ```bash
 npm i -D goserve
