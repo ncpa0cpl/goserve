@@ -148,9 +148,9 @@ func (f *StaticFile) Revalidate() (bool, error) {
 }
 
 func addMetaTags(html []byte, relPath string, modTime time.Time) []byte {
-	fname := fmt.Sprintf("    <meta name=\"_serve:fname\" content=\"%s\" />\n", relPath)
+	fname := fmt.Sprintf("  <meta name=\"_serve:fname\" content=\"%s\" />\n", relPath)
 	mtime := fmt.Sprintf("    <meta name=\"_serve:mtime\" content=\"%d\" />\n", modTime.UnixMilli())
-	fsize := fmt.Sprintf("    <meta name=\"_serve:fsize\" content=\"%d\" />\n", len(html))
+	fsize := fmt.Sprintf("    <meta name=\"_serve:fsize\" content=\"%d\" />\n  ", len(html))
 
 	tags := []byte(fname + mtime + fsize)
 
@@ -285,7 +285,7 @@ type Configuration struct {
 	ExcludeEtag      bool
 	MaxAge           int
 	NoCache          bool
-	MacCacheSize     uint64
+	MaxCacheSize     uint64
 	MaxCacheFileSize uint64
 	Watcher          bool
 	AutoReload       bool
@@ -305,7 +305,7 @@ var WebSockets = utils.CreateWsController()
 var upgrader = websocket.Upgrader{}
 
 func AddFileRoutes(server *echo.Echo, baseUrl string, rootDir string, conf *Configuration) {
-	cache.maxSize = conf.MacCacheSize * 1024 * 1024         // MB * KB * B = B
+	cache.maxSize = conf.MaxCacheSize * 1024 * 1024         // MB * KB * B = B
 	cache.maxFileSize = conf.MaxCacheFileSize * 1024 * 1024 // MB * KB * B = B
 
 	if rootDir[len(rootDir)-1] != '/' {
@@ -538,10 +538,14 @@ var HMR_SCRIPT string
 var AUTORELOAD_SCRIPT string
 
 func addHmrScript(html []byte, autoreload bool) []byte {
-	tag := []byte(fmt.Sprintf("    <script>%s\n    </script>\n", HMR_SCRIPT))
+	comment := "<!-- Code injected by 'goserve' -->"
+	commentEnd := "<!-- End of injected code -->"
+	tag := []byte(fmt.Sprintf("  %s\n    <script>\n%s\n    </script>\n", comment, HMR_SCRIPT))
 
 	if autoreload {
-		tag = append(tag, fmt.Sprintf("    <script>%s\n    </script>\n", AUTORELOAD_SCRIPT)...)
+		tag = append(tag, fmt.Sprintf("    <script>\n%s\n    </script>\n    %s\n  ", AUTORELOAD_SCRIPT, commentEnd)...)
+	} else {
+		tag = append(tag, fmt.Sprintf("    %s\n  ", commentEnd)...)
 	}
 
 	headEnd := []byte("</head>")
@@ -557,4 +561,19 @@ func addHmrScript(html []byte, autoreload bool) []byte {
 	result := append(before, append(tag, after...)...)
 
 	return result
+}
+
+func init() {
+	// add 6 space identation to the JS code
+	lines := strings.Split(HMR_SCRIPT, "\n")
+	for i, line := range lines {
+		lines[i] = "      " + line
+	}
+	HMR_SCRIPT = strings.Join(lines, "\n")
+
+	lines = strings.Split(AUTORELOAD_SCRIPT, "\n")
+	for i, line := range lines {
+		lines[i] = "      " + line
+	}
+	AUTORELOAD_SCRIPT = strings.Join(lines, "\n")
 }

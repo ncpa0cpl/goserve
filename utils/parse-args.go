@@ -44,7 +44,18 @@ func removePrefix(argName string) string {
 	return argName[1:]
 }
 
-func ParseArgs(args []string) ParsedArgs {
+type BoolArgsList []string
+
+func (barg BoolArgsList) isOne(arg string) bool {
+	for _, a := range barg {
+		if a == arg {
+			return true
+		}
+	}
+	return false
+}
+
+func ParseArgs(args []string, boolArgs BoolArgsList) ParsedArgs {
 	results := ParsedArgs{
 		Input:       "",
 		NamedParams: NewMap(map[string]string{}),
@@ -54,7 +65,7 @@ func ParseArgs(args []string) ParsedArgs {
 		arg := args[i]
 		if strings.HasPrefix(arg, "-") {
 			vIdx := i + 1
-			if vIdx < len(args) && !strings.HasPrefix(args[vIdx], "-") {
+			if !boolArgs.isOne(arg) && vIdx < len(args) && !strings.HasPrefix(args[vIdx], "-") {
 				results.NamedParams.Set(removePrefix(arg), args[vIdx])
 				i += 1
 			} else {

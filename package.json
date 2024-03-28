@@ -1,7 +1,9 @@
 {
-  "name": "goserve",
+  "name": "@ncpa0cpl/goserve",
   "version": "1.0.0",
   "description": "A simple static file server written in Go.",
+  "author": "Szymon Bretner",
+  "license": "MIT",
   "keywords": [
     "static",
     "http",
@@ -14,11 +16,17 @@
     "auto reload"
   ],
   "files": [
-    "./serve"
+    "./README.md",
+    "./LICENSE",
+    "./serve",
+    "./node-api.mjs",
+    "./node-api.d.ts"
   ],
-  "bin": "./serve",
-  "author": "Szymon Bretner",
-  "license": "MIT",
+  "main": "./node-api.mjs",
+  "types": "./node-api.d.ts",
+  "bin": {
+    "goserve": "./serve"
+  },
   "scripts": {
     "prepack": "go build -o ./serve"
   }

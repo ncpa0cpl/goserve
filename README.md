@@ -8,7 +8,7 @@
 **Not available atm.**
 
 ```bash
-npm i -D goserve
+npm i -D @ncap0cpl/goserve
 ```
 
 #### Build yourself
@@ -62,11 +62,25 @@ To serve files from the `public` directory of the current directory on port 8000
 goserve --port 8000 ./public
 ```
 
-### Auto-reload
+#### Node API
+
+Goserve can also be imported in a Node script and spawned using a provided function.
+
+```javascript
+import { serve } from '@ncap0cpl/goserve';
+
+const childProcess = serve("path/to/directory", {
+  port: 3000
+});
+```
+
+#### Options
+
+##### Auto-reload
 
 When auto-reload is enabled, either via `--auto-reload` or `--aw` flag, a script tag will be injected to every ".html" file that will reload the page every time that file is changed. Note that the `--auto-reload` flag must be used alongside the `--watch` flag.
 
-### Watch mode
+##### Watch mode
 
 When watch mode is enabled, either via `--watch` or `--aw` flag, to every ".html" file a script tag will be injected enabling listening to file changes within the hosted directory.
 

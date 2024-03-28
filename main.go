@@ -12,7 +12,14 @@ import (
 )
 
 func main() {
-	args := utils.ParseArgs(os.Args[1:])
+	args := utils.ParseArgs(os.Args[1:], []string{
+		"--help",
+		"--aw",
+		"--watch",
+		"--auto-reload",
+		"--nocache",
+		"--noetag",
+	})
 
 	if args.NamedParams.Has("help") {
 		fmt.Println("Usage: goserve [options] [directory]")
@@ -28,10 +35,12 @@ func main() {
 		fmt.Println("  --watch        When enabled, server will send fs events when files are changed. To listen to these add event listeners to `window.HMR` on client side.")
 		fmt.Println("  --auto-reload  Automatically inject a script to html files that will reload the page on a 'watch' change event.")
 		fmt.Println("")
-		fmt.Println("Caching")
+		fmt.Println("Cache Headers Options")
 		fmt.Println("  --maxage <seconds>   The max-age value to set in the Cache-Control header.")
 		fmt.Println("  --nocache            Disable caching.")
 		fmt.Println("  --noetag             Disable ETag generation.")
+		fmt.Println("")
+		fmt.Println("Server Cache")
 		fmt.Println("  --cache:max <MB>     Maximum size of all files in the cache. Default: 100MB")
 		fmt.Println("  --cache:flimit <MB>  Maximum size of single file that can be put in cache. Default: 10MB")
 		return
@@ -80,12 +89,13 @@ func main() {
 		ExcludeEtag:      args.NamedParams.Has("noetag"),
 		MaxAge:           args.GetParamInt("maxage", 0),
 		NoCache:          args.NamedParams.Has("nocache"),
-		MacCacheSize:     args.GetParamUint64("cache:max", 100),
+		MaxCacheSize:     args.GetParamUint64("cache:max", 100),
 		MaxCacheFileSize: args.GetParamUint64("cache:flimit", 10),
 		Watcher:          args.NamedParams.Has("watch") || args.NamedParams.Has("aw"),
 		AutoReload:       args.NamedParams.Has("auto-reload") || args.NamedParams.Has("aw"),
 	})
 
-	err := server.Start(fmt.Sprintf(":%s", args.GetParam("port", "8080")))
+	port := args.GetParam("port", "8080")
+	err := server.Start(fmt.Sprintf(":%s", port))
 	server.Logger.Fatal(err)
 }
