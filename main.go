@@ -29,6 +29,7 @@ func main() {
 		fmt.Println("  --loglevel <level>  The log level. Default: info")
 		fmt.Println("  --port <port>       The port to serve on. Default: 8080")
 		fmt.Println("  --redirect <url>    Redirect all unmatched routes to a specified url.")
+		fmt.Println("  --spa <filepath>    Specify a file to send for all unmatched routes.")
 		fmt.Println("")
 		fmt.Println("Hot Module Reload")
 		fmt.Println("  --aw           Alias for '--watch --auto-reload'")
@@ -43,6 +44,11 @@ func main() {
 		fmt.Println("Server Cache")
 		fmt.Println("  --cache:max <MB>     Maximum size of all files in the cache. Default: 100MB")
 		fmt.Println("  --cache:flimit <MB>  Maximum size of single file that can be put in cache. Default: 10MB")
+		return
+	}
+
+	if args.HasParam("spa") && args.HasParam("redirect") {
+		fmt.Println("Cannot specify both --spa and --redirect.")
 		return
 	}
 
@@ -86,6 +92,7 @@ func main() {
 
 	AddFileRoutes(server, "", rootDir, &Configuration{
 		RedirectTo:       args.GetParam("redirect", ""),
+		SpaFile:          args.GetParam("spa", ""),
 		ExcludeEtag:      args.NamedParams.Has("noetag"),
 		MaxAge:           args.GetParamInt("maxage", 0),
 		NoCache:          args.NamedParams.Has("nocache"),

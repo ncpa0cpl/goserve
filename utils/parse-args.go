@@ -12,6 +12,11 @@ type ParsedArgs struct {
 	NamedParams *Map[string, string]
 }
 
+func (args *ParsedArgs) HasParam(paramName string) bool {
+	_, ok := args.NamedParams.Get(paramName)
+	return ok
+}
+
 func (args *ParsedArgs) GetParam(paramName string, defaultValue string) string {
 	if v, ok := args.NamedParams.Get(paramName); ok {
 		return v

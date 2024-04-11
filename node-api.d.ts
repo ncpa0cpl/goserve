@@ -14,6 +14,7 @@ export declare interface ServeOptions {
   port?: number;
   loglevel?: "info" | "debug" | "warn" | "error";
   redirect?: string;
+  spa?: string;
   hmr?: {
     watch?: boolean;
     autoReload?: boolean;

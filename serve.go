@@ -282,6 +282,7 @@ func (s *StaticResponse) buildCacheControlHeader(conf *Configuration) string {
 type Configuration struct {
 	BeforeSend       func(*StaticResponse, echo.Context) error
 	RedirectTo       string
+	SpaFile          string
 	ExcludeEtag      bool
 	MaxAge           int
 	NoCache          bool
@@ -303,6 +304,29 @@ func fmtSize(size int) string {
 
 var WebSockets = utils.CreateWsController()
 var upgrader = websocket.Upgrader{}
+
+func SendFromCache(server *echo.Echo, c echo.Context, conf *Configuration, filepath string) (error, bool) {
+	iter := cache.Iterator()
+	for !iter.Done() {
+		file, _ := iter.Next()
+		if file.RelPath == filepath {
+			changed, err := file.Revalidate()
+			if err != nil {
+				server.Logger.Errorf(
+					"Failed to revalidate file(%s): %s",
+					file.Path, err.Error(),
+				)
+				return c.String(500, "Internal server error"), true
+			}
+			if changed {
+				// update cache size
+				cache.CalcSize()
+			}
+			return sendFile(file, c, conf), true
+		}
+	}
+	return nil, false
+}
 
 func AddFileRoutes(server *echo.Echo, baseUrl string, rootDir string, conf *Configuration) {
 	cache.maxSize = conf.MaxCacheSize * 1024 * 1024         // MB * KB * B = B
@@ -415,50 +439,74 @@ func AddFileRoutes(server *echo.Echo, baseUrl string, rootDir string, conf *Conf
 
 		server.Logger.Debugf("Received request for file: %s", routePath)
 
-		iter := cache.Iterator()
-		for !iter.Done() {
-			file, _ := iter.Next()
-			if file.RelPath == routePath {
-				changed, err := file.Revalidate()
-				if err != nil {
-					server.Logger.Errorf(
-						"Failed to revalidate file(%s): %s",
-						file.Path, err.Error(),
-					)
-					return c.String(500, "Internal server error")
-				}
-				if changed {
-					// update cache size
-					cache.CalcSize()
-				}
-				return sendFile(file, c, conf)
-			}
+		err, foundInCache := SendFromCache(server, c, conf, routePath)
+
+		if err != nil {
+			return err
+		}
+
+		if foundInCache {
+			return nil
 		}
 
 		// check if files exists in fs, and if it does load it into memory
 		// and serve it
 		filepath := path.Join(rootDir, routePath)
-		content, ctype, modTime, err := getStaticFile(filepath, rootDir)
+		if utils.FileExists(filepath) {
+			content, ctype, modTime, err := getStaticFile(filepath, rootDir)
 
-		if err == nil {
-			file := &StaticFile{
-				Path:              filepath,
-				RelPath:           routePath,
-				Content:           content,
-				ContentType:       ctype,
-				Etag:              utils.HashBytes(content),
-				LastModifiedAt:    modTime,
-				LastModifiedAtRFC: modTime.Format(http.TimeFormat),
-				Config:            conf,
+			if err == nil {
+				file := &StaticFile{
+					Path:              filepath,
+					RelPath:           routePath,
+					Content:           content,
+					ContentType:       ctype,
+					Etag:              utils.HashBytes(content),
+					LastModifiedAt:    modTime,
+					LastModifiedAtRFC: modTime.Format(http.TimeFormat),
+					Config:            conf,
+				}
+				cache.Push(file)
+
+				return sendFile(file, c, conf)
+			} else {
+				server.Logger.Errorf("Failed to read the file(%s): %s", filepath, err.Error())
 			}
-			cache.Push(file)
-
-			return sendFile(file, c, conf)
-		} else {
-			server.Logger.Errorf("Failed to read the file(%s): %s", filepath, err.Error())
 		}
 
-		if conf.RedirectTo != "" {
+		if conf.SpaFile != "" {
+			relpath := strings.TrimPrefix(conf.SpaFile, "./")
+
+			err, foundInCache := SendFromCache(server, c, conf, relpath)
+
+			if err != nil {
+				return err
+			}
+
+			if foundInCache {
+				return nil
+			}
+
+			filepath := path.Join(rootDir, relpath)
+			content, ctype, modTime, err := getStaticFile(filepath, rootDir)
+			if err == nil {
+				file := &StaticFile{
+					Path:              filepath,
+					RelPath:           relpath,
+					Content:           content,
+					ContentType:       ctype,
+					Etag:              utils.HashBytes(content),
+					LastModifiedAt:    modTime,
+					LastModifiedAtRFC: modTime.Format(http.TimeFormat),
+					Config:            conf,
+				}
+				cache.Push(file)
+
+				return sendFile(file, c, conf)
+			} else {
+				server.Logger.Errorf("Failed to read the file(%s): %s", filepath, err.Error())
+			}
+		} else if conf.RedirectTo != "" {
 			server.Logger.Debugf(
 				"Requested file not found, redirecting to: %s",
 				conf.RedirectTo,

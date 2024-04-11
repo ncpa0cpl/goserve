@@ -22,6 +22,9 @@ export function serve(dirPath, options, spawnOptions) {
   if (options.redirect) {
     args.push("--redirect", options.redirect);
   }
+  if (options.spa) {
+    args.push("--spa", options.spa);
+  }
   if (options.hmr) {
     if (options.hmr.watch) {
       args.push("--watch");
