@@ -42,16 +42,19 @@ Options:
   --loglevel <level>  The log level. Default: info
   --port <port>       The port to serve on. Default: 8080
   --redirect <url>    Redirect all unmatched routes to a specified url.
+  --spa <filepath>    Specify a file to send for all unmatched routes.
 
 Hot Module Reload
   --aw           Alias for '--watch --auto-reload'
   --watch        When enabled, server will send fs events when files are changed. To listen to these add event listeners to `window.HMR` on client side.
   --auto-reload  Automatically inject a script to html files that will reload the page on a 'watch' change event.
 
-Caching
+Cache Headers Options
   --maxage <seconds>   The max-age value to set in the Cache-Control header.
   --nocache            Disable caching.
   --noetag             Disable ETag generation.
+
+Server Cache
   --cache:max <MB>     Maximum size of all files in the cache. Default: 100MB
   --cache:flimit <MB>  Maximum size of single file that can be put in cache. Default: 10MB
 ```

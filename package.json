@@ -1,6 +1,6 @@
 {
   "name": "@ncpa0cpl/goserve",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A simple static file server written in Go.",
   "author": "Szymon Bretner",
   "license": "MIT",
