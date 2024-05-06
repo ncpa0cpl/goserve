@@ -1,17 +1,21 @@
 package utils
 
 import (
-	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/labstack/echo/v4"
 )
 
 type Range struct {
-	Start int64
-	End   int64
+	HasStart bool
+	HasEnd   bool
+	Start uint64
+	End   uint64
 }
 
-func ParseRangeHeader(headers *http.Header) *Range {
+func ParseRangeHeader(c echo.Context) *Range {
+	headers := c.Request().Header
 	header := headers.Get("Range")
 
 	if len(header) == 0 || !strings.HasPrefix(header, "bytes=") {
@@ -24,22 +28,26 @@ func ParseRangeHeader(headers *http.Header) *Range {
 
 	r := &Range{}
 
-	if len(rangeParts) > 0 {
-		startValue, err := strconv.ParseInt(rangeParts[0], 10, 64)
+	if len(rangeParts) > 0 && rangeParts[0] != "" {
+		startValue, err := strconv.ParseUint(rangeParts[0], 10, 64)
 
 		if err == nil {
 			r.Start = startValue
+			r.HasStart = true
 		} else {
+			c.Logger().Error(err)
 			return nil
 		}
 	}
 
-	if len(rangeParts) > 1 {
-		endValue, err := strconv.ParseInt(rangeParts[1], 10, 64)
+	if len(rangeParts) > 1 && rangeParts[1] != "" {
+		endValue, err := strconv.ParseUint(rangeParts[1], 10, 64)
 
 		if err == nil {
 			r.End = endValue
+			r.HasEnd = true
 		} else {
+			c.Logger().Error(err)
 			return nil
 		}
 	}

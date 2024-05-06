@@ -104,6 +104,11 @@ func detectContentType(filepath string, content []byte) string {
 		}
 	}
 
+	mappedMime := MimeTypesMap[ext[1:]]
+	if mappedMime != "" {
+		return mappedMime
+	}
+
 	return httpDet
 }
 
@@ -290,6 +295,8 @@ type Configuration struct {
 	MaxCacheFileSize uint64
 	Watcher          bool
 	AutoReload       bool
+	ChunkSize		 uint64
+	NoStreaming      bool
 }
 
 func fmtSize(size int) string {
@@ -524,7 +531,7 @@ func sendFile(file *StaticFile, c echo.Context, conf *Configuration) error {
 		file:                     file,
 		cacheMaxAge:              86400,
 		cacheRequireRevalidation: false,
-		acceptRangeRequests:      true,
+		acceptRangeRequests:      !conf.NoStreaming,
 		isPrivate:                false,
 		contentType:              file.ContentType,
 	}
@@ -539,35 +546,90 @@ func sendFile(file *StaticFile, c echo.Context, conf *Configuration) error {
 		}
 	}
 
-	if c.Request().Header.Get("If-None-Match") == file.Etag || c.Request().Header.Get("If-Modified-Since") == file.LastModifiedAtRFC {
-		c.Logger().Debug("Resource not modified, returning 304")
-		return c.NoContent(304)
-	}
-
 	h := c.Response().Header()
 	h.Set("Last-Modified", file.LastModifiedAtRFC)
 	h.Set("Date", time.Now().Format(http.TimeFormat))
 	h.Set("Content-Type", sresp.contentType)
 	h.Set("Cache-Control", sresp.buildCacheControlHeader(conf))
 
-	if !conf.ExcludeEtag {
-		h.Set("ETag", file.Etag)
-	}
-
 	if sresp.acceptRangeRequests {
 		h.Set("Accept-Ranges", "bytes")
-		requestedRange := utils.ParseRangeHeader(&h)
+
+		requestedRange := utils.ParseRangeHeader(c)
 		if requestedRange != nil {
-			contentLength := strconv.FormatInt(requestedRange.End-requestedRange.Start+1, 10)
+			h.Set("Connection", "keep-alive")
+			h.Set("Keep-Alive", "timeout=5, max=1000")
+
+			if !requestedRange.HasEnd {
+				requestedRange.End = uint64(len(file.Content) - 1)
+			}
+
+			c.Logger().Debugf("Requested range for file %s: %d-%d", file.RelPath, requestedRange.Start, requestedRange.End)
+
+			contentLength := strconv.FormatUint(requestedRange.End-requestedRange.Start+1, 10)
 			contentRange := ("bytes " +
-				strconv.FormatInt(requestedRange.Start, 10) +
-				"-" + strconv.FormatInt(requestedRange.End, 10) +
+				strconv.FormatUint(requestedRange.Start, 10) +
+				"-" + strconv.FormatUint(requestedRange.End, 10) +
 				"/" + strconv.FormatInt(int64(len(file.Content)), 10))
 			h.Set("Content-Length", contentLength)
 			h.Set("Content-Range", contentRange)
 
-			return c.Blob(200, file.ContentType, file.Content[requestedRange.Start:requestedRange.End+1])
+			writer := c.Response().Writer
+
+			retBuff := file.Content[requestedRange.Start : requestedRange.End+1]
+			retBuffLen := uint64(len(retBuff))
+			chunkSize := conf.ChunkSize
+			if retBuffLen > chunkSize {
+				writer.WriteHeader(206)
+
+				for i := uint64(0); i < retBuffLen; i += chunkSize {
+					end := i + chunkSize
+					if end > retBuffLen {
+						end = retBuffLen
+					}
+
+					// check if the request channel is still opened
+					// and stop sending if it's not
+					channelDone := c.Request().Context().Done()
+					select {
+					case <-channelDone:
+						return nil
+					default:
+						// no-op
+					}
+					writer.Write(retBuff[i:end])
+					writer.(http.Flusher).Flush()
+
+					c.Logger().Debugf(
+						"Sending chunk %d-%d/%d",
+						requestedRange.Start+i,
+						requestedRange.Start+end,
+						contentLength,
+					)
+				}
+			} else {
+				writer.Write(retBuff)
+				writer.WriteHeader(200)
+				writer.(http.Flusher).Flush()
+
+				c.Logger().Debugf(
+					"Sending chunk %d-%d/%d",
+					requestedRange.Start,
+					requestedRange.End,
+					contentLength,
+				)
+			}
+
+			return nil
 		}
+	}
+
+	if c.Request().Header.Get("If-None-Match") == file.Etag || c.Request().Header.Get("If-Modified-Since") == file.LastModifiedAtRFC {
+		c.Logger().Debug("Resource not modified, returning 304")
+		return c.NoContent(304)
+	}
+	if !conf.ExcludeEtag {
+		h.Set("ETag", file.Etag)
 	}
 
 	content := file.Content

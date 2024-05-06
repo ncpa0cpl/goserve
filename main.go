@@ -30,6 +30,8 @@ func main() {
 		fmt.Println("  --port <port>       The port to serve on. Default: 8080")
 		fmt.Println("  --redirect <url>    Redirect all unmatched routes to a specified url.")
 		fmt.Println("  --spa <filepath>    Specify a file to send for all unmatched routes.")
+		fmt.Println("  --chunk-size <KB>   The size of chunks when streaming. Default: 500KB")
+		fmt.Println("  --no-streaming      Disables the server ability to process Range requests and sending partial content.")
 		fmt.Println("")
 		fmt.Println("Hot Module Reload")
 		fmt.Println("  --aw           Alias for '--watch --auto-reload'")
@@ -38,7 +40,7 @@ func main() {
 		fmt.Println("")
 		fmt.Println("Cache Headers Options")
 		fmt.Println("  --maxage <seconds>   The max-age value to set in the Cache-Control header.")
-		fmt.Println("  --nocache            Disable caching.")
+		fmt.Println("  --nocache            Require browsers to re-validate etag on each resource load.")
 		fmt.Println("  --noetag             Disable ETag generation.")
 		fmt.Println("")
 		fmt.Println("Server Cache")
@@ -100,6 +102,8 @@ func main() {
 		MaxCacheFileSize: args.GetParamUint64("cache:flimit", 10),
 		Watcher:          args.NamedParams.Has("watch") || args.NamedParams.Has("aw"),
 		AutoReload:       args.NamedParams.Has("auto-reload") || args.NamedParams.Has("aw"),
+		ChunkSize:        args.GetParamUint64("chunk-size", 500)*1024,
+		NoStreaming:      args.NamedParams.Has("no-streaming"),
 	})
 
 	port := args.GetParam("port", "8080")
