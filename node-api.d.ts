@@ -15,6 +15,9 @@ export declare interface ServeOptions {
   loglevel?: "info" | "debug" | "warn" | "error";
   redirect?: string;
   spa?: string;
+  chunkSize?: number;
+  noStreaming?: boolean;
+  compress?: boolean;
   hmr?: {
     watch?: boolean;
     autoReload?: boolean;

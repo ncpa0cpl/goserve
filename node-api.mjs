@@ -25,6 +25,15 @@ export function serve(dirPath, options, spawnOptions) {
   if (options.spa) {
     args.push("--spa", options.spa);
   }
+  if (options.chunkSize) {
+    args.push("--chunk-size", String(options.chunkSize));
+  }
+  if (options.noStreaming) {
+    args.push("--no-streaming");
+  }
+  if (options.compress) {
+    args.push("--compress");
+  }
   if (options.hmr) {
     if (options.hmr.watch) {
       args.push("--watch");
