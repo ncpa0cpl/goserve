@@ -6,6 +6,7 @@ import (
 	path "path/filepath"
 
 	echo "github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"github.com/labstack/gommon/log"
 
 	"github.com/ncpa0cpl/static-server/utils"
@@ -30,8 +31,9 @@ func main() {
 		fmt.Println("  --port <port>       The port to serve on. Default: 8080")
 		fmt.Println("  --redirect <url>    Redirect all unmatched routes to a specified url.")
 		fmt.Println("  --spa <filepath>    Specify a file to send for all unmatched routes.")
-		fmt.Println("  --chunk-size <KB>   The size of chunks when streaming. Default: 500KB")
+		fmt.Println("  --chunk-size <KB>   The size of chunks when streaming. Default: 2048KB")
 		fmt.Println("  --no-streaming      Disables the server ability to process Range requests and sending partial content.")
+		fmt.Println("  --compress          Compress responses using the GZip algorithm.")
 		fmt.Println("")
 		fmt.Println("Hot Module Reload")
 		fmt.Println("  --aw           Alias for '--watch --auto-reload'")
@@ -90,6 +92,10 @@ func main() {
 		server.Logger.SetLevel(log.OFF)
 	}
 
+	if args.NamedParams.Has("compress") {
+		server.Use(middleware.Gzip())
+	}
+
 	server.Logger.Info(fmt.Sprintf("Serving files from: %s", rootDir))
 
 	AddFileRoutes(server, "", rootDir, &Configuration{
@@ -102,7 +108,7 @@ func main() {
 		MaxCacheFileSize: args.GetParamUint64("cache:flimit", 10),
 		Watcher:          args.NamedParams.Has("watch") || args.NamedParams.Has("aw"),
 		AutoReload:       args.NamedParams.Has("auto-reload") || args.NamedParams.Has("aw"),
-		ChunkSize:        args.GetParamUint64("chunk-size", 500)*1024,
+		ChunkSize:        args.GetParamUint64("chunk-size", 2048)*1024,
 		NoStreaming:      args.NamedParams.Has("no-streaming"),
 	})
 

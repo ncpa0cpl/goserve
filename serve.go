@@ -104,9 +104,11 @@ func detectContentType(filepath string, content []byte) string {
 		}
 	}
 
-	mappedMime := MimeTypesMap[ext[1:]]
-	if mappedMime != "" {
-		return mappedMime
+	if ext != "" {
+		mappedMime := MimeTypesMap[ext[1:]]
+		if mappedMime != "" {
+			return mappedMime
+		}
 	}
 
 	return httpDet
@@ -295,7 +297,7 @@ type Configuration struct {
 	MaxCacheFileSize uint64
 	Watcher          bool
 	AutoReload       bool
-	ChunkSize		 uint64
+	ChunkSize        uint64
 	NoStreaming      bool
 }
 
@@ -575,12 +577,12 @@ func sendFile(file *StaticFile, c echo.Context, conf *Configuration) error {
 			h.Set("Content-Range", contentRange)
 
 			writer := c.Response().Writer
+			writer.WriteHeader(206)
 
 			retBuff := file.Content[requestedRange.Start : requestedRange.End+1]
 			retBuffLen := uint64(len(retBuff))
 			chunkSize := conf.ChunkSize
 			if retBuffLen > chunkSize {
-				writer.WriteHeader(206)
 
 				for i := uint64(0); i < retBuffLen; i += chunkSize {
 					end := i + chunkSize
@@ -609,7 +611,6 @@ func sendFile(file *StaticFile, c echo.Context, conf *Configuration) error {
 				}
 			} else {
 				writer.Write(retBuff)
-				writer.WriteHeader(200)
 				writer.(http.Flusher).Flush()
 
 				c.Logger().Debugf(
