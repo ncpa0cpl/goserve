@@ -3,9 +3,7 @@
 
 ### Build & Install
 
-#### ~Install via npm~
-
-**Not available atm.**
+#### Install via npm
 
 ```bash
 npm i -D @ncap0cpl/goserve
@@ -43,6 +41,9 @@ Options:
   --port <port>       The port to serve on. Default: 8080
   --redirect <url>    Redirect all unmatched routes to a specified url.
   --spa <filepath>    Specify a file to send for all unmatched routes.
+  --chunk-size <KB>   The size of chunks when streaming. Default: 2048KB
+  --no-streaming      Disables the server ability to process Range requests and sending partial content.
+  --compress          Compress responses using the GZip algorithm.
 
 Hot Module Reload
   --aw           Alias for '--watch --auto-reload'
@@ -51,7 +52,7 @@ Hot Module Reload
 
 Cache Headers Options
   --maxage <seconds>   The max-age value to set in the Cache-Control header.
-  --nocache            Disable caching.
+  --nocache            Require browsers to re-validate etag on each resource load.
   --noetag             Disable ETag generation.
 
 Server Cache
