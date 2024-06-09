@@ -22,12 +22,24 @@ import (
 type StaticFile struct {
 	Path              string
 	RelPath           string
-	Content           []byte
+	content           []byte
 	ContentType       string
 	LastModifiedAt    *time.Time
 	LastModifiedAtRFC string
 	Etag              string
 	Config            *Configuration
+}
+
+func (f *StaticFile) Length() int {
+	return len(f.content)
+}
+
+func (f *StaticFile) GetContent() []byte {
+	// return the copy of the byte slice to avoid problems
+	// that could be caused by the user mutating the array
+	buff := make([]byte, len(f.content))
+	copy(buff, f.content)
+	return buff
 }
 
 type Cache struct {
@@ -43,7 +55,7 @@ func (c *Cache) CalcSize() uint64 {
 	iter := c.files.Iterator()
 	for !iter.Done() {
 		file, _ := iter.Next()
-		size += uint64(len(file.Content))
+		size += uint64(file.Length())
 	}
 	c.currentSize = size
 	return size
@@ -55,7 +67,7 @@ func (c *Cache) CalcSizeMb() uint64 {
 }
 
 func (c *Cache) Push(file *StaticFile) bool {
-	fsize := uint64(len(file.Content))
+	fsize := uint64(file.Length())
 	if fsize > c.maxFileSize {
 		return false
 	}
@@ -72,7 +84,7 @@ func (c *Cache) Iterator() Iterator[*StaticFile] {
 }
 
 func (c *Cache) IsWithinFileLimit(file *StaticFile) bool {
-	return uint64(len(file.Content)) <= c.maxFileSize
+	return uint64(file.Length()) <= c.maxFileSize
 }
 
 var cache *Cache = &Cache{
@@ -142,9 +154,9 @@ func (f *StaticFile) Revalidate() (bool, error) {
 	}
 
 	if f.Config.Watcher && strings.Contains(f.ContentType, "text/html") {
-		f.Content = addMetaTags(buff, f.RelPath, modTime)
+		f.content = addMetaTags(buff, f.RelPath, modTime)
 	} else {
-		f.Content = buff
+		f.content = buff
 	}
 	f.Etag = utils.HashBytes(buff)
 	f.LastModifiedAt = &modTime
@@ -222,11 +234,7 @@ func (s *StaticResponse) GetFilepath() string {
 }
 
 func (s *StaticResponse) GetFileContent() []byte {
-	// return the copy of the byte slice to avoid problems
-	// that could be caused by the user mutating the array
-	buff := make([]byte, len(s.file.Content))
-	copy(buff, s.file.Content)
-	return buff
+	return s.file.GetContent()
 }
 
 func (s *StaticResponse) GetContentType() string {
@@ -358,7 +366,7 @@ func AddFileRoutes(server *echo.Echo, baseUrl string, rootDir string, conf *Conf
 					file := &StaticFile{
 						Path:              filepath,
 						RelPath:           relativePath,
-						Content:           content,
+						content:           content,
 						ContentType:       ctype,
 						Etag:              utils.HashBytes(content),
 						LastModifiedAt:    modTime,
@@ -372,7 +380,7 @@ func AddFileRoutes(server *echo.Echo, baseUrl string, rootDir string, conf *Conf
 							server.Logger.Debugf(
 								"Cache mem limit reached when adding file: %s (%s)",
 								relativePath,
-								fmtSize(len(file.Content)),
+								fmtSize(file.Length()),
 							)
 							// stop walking the directory
 							return fmt.Errorf("unable to add file to cache")
@@ -468,7 +476,7 @@ func AddFileRoutes(server *echo.Echo, baseUrl string, rootDir string, conf *Conf
 				file := &StaticFile{
 					Path:              filepath,
 					RelPath:           routePath,
-					Content:           content,
+					content:           content,
 					ContentType:       ctype,
 					Etag:              utils.HashBytes(content),
 					LastModifiedAt:    modTime,
@@ -502,7 +510,7 @@ func AddFileRoutes(server *echo.Echo, baseUrl string, rootDir string, conf *Conf
 				file := &StaticFile{
 					Path:              filepath,
 					RelPath:           relpath,
-					Content:           content,
+					content:           content,
 					ContentType:       ctype,
 					Etag:              utils.HashBytes(content),
 					LastModifiedAt:    modTime,
@@ -563,7 +571,7 @@ func sendFile(file *StaticFile, c echo.Context, conf *Configuration) error {
 			h.Set("Keep-Alive", "timeout=5, max=1000")
 
 			if !requestedRange.HasEnd {
-				requestedRange.End = uint64(len(file.Content) - 1)
+				requestedRange.End = uint64(file.Length() - 1)
 			}
 
 			c.Logger().Debugf("Requested range for file %s: %d-%d", file.RelPath, requestedRange.Start, requestedRange.End)
@@ -572,14 +580,14 @@ func sendFile(file *StaticFile, c echo.Context, conf *Configuration) error {
 			contentRange := ("bytes " +
 				strconv.FormatUint(requestedRange.Start, 10) +
 				"-" + strconv.FormatUint(requestedRange.End, 10) +
-				"/" + strconv.FormatInt(int64(len(file.Content)), 10))
+				"/" + strconv.FormatInt(int64(file.Length()), 10))
 			h.Set("Content-Length", contentLength)
 			h.Set("Content-Range", contentRange)
 
 			writer := c.Response().Writer
 			writer.WriteHeader(206)
 
-			retBuff := file.Content[requestedRange.Start : requestedRange.End+1]
+			retBuff := file.GetContent()[requestedRange.Start : requestedRange.End+1]
 			retBuffLen := uint64(len(retBuff))
 			chunkSize := conf.ChunkSize
 			if retBuffLen > chunkSize {
@@ -633,7 +641,7 @@ func sendFile(file *StaticFile, c echo.Context, conf *Configuration) error {
 		h.Set("ETag", file.Etag)
 	}
 
-	content := file.Content
+	content := file.GetContent()
 
 	if conf.Watcher && strings.Contains(file.ContentType, "text/html") {
 		content = addHmrScript(content, conf.AutoReload)
